@@ -4,6 +4,9 @@ use embassy_net::udp::{PacketMetadata, UdpSocket};
 use sntpc::NtpContext;
 use sntpc_time_embassy::EmbassyTimestampGenerator;
 
+/// Standard NTP port.
+pub const PORT: u16 = 123;
+
 pub async fn get_time(stack: embassy_net::Stack<'_>, addr: SocketAddr) -> anyhow::Result<sntpc::NtpResult> {
     let mut rx_meta: [PacketMetadata; 10] = [PacketMetadata::EMPTY; 10];
     let mut rx_buffer: [u8; 200] = [0; 200];

@@ -1,6 +1,5 @@
 use alloc::string::String;
 use defmt::{error, info};
-use embassy_futures::select::Either::First;
 use embassy_futures::select::select;
 use embassy_net::{DhcpConfig, Stack, StackResources};
 use embassy_time::{Duration, Timer};

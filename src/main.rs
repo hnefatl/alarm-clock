@@ -7,9 +7,9 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use core::net::{IpAddr, SocketAddr};
+use core::net::SocketAddr;
 
-use defmt::{error, info, warn};
+use defmt::{error, info};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
@@ -20,6 +20,7 @@ use esp_rtos::{self};
 use esp_backtrace as _;
 use esp_println as _;
 
+mod dns;
 mod ntp;
 mod secrets;
 mod wifi;
@@ -62,39 +63,14 @@ async fn main(spawner: Spawner) -> ! {
         info!("ipv4: {}", stack.config_v4());
         info!("ipv6: {}", stack.config_v6());
 
-        let ntp_addrs = dns_query(stack, "time.google.com.").await;
-        for ntp_addr in ntp_addrs {
-            match ntp::get_time(stack, SocketAddr::new(ntp_addr, 123)).await {
-                Ok(r) => {
-                    info!("time: {:?}", r);
-                    break;
-                }
-                Err(e) => error!("get time error"),
-            }
-        }
+        let Ok(ntp_result) = dns::run_against_dns(stack, "time.google.com.", async |addr| {
+            ntp::get_time(stack, SocketAddr::new(addr, ntp::PORT)).await
+        })
+        .await
+        else {
+            error!("get time error");
+            continue;
+        };
+        info!("time: {:?}", ntp_result);
     }
-}
-
-async fn dns_query(
-    stack: embassy_net::Stack<'_>,
-    addr: &str,
-) -> heapless::Vec<IpAddr, { embassy_net::DNS_MAX_SERVER_COUNT }> {
-    let mut addresses = heapless::Vec::<IpAddr, _>::new();
-    match stack.dns_query(addr, embassy_net::dns::DnsQueryType::A).await {
-        Ok(r) => {
-            for a in r {
-                let _ = addresses.push(a.into());
-            }
-        }
-        Err(e) => warn!("Failed to resolve A for {}: {}", addr, e),
-    }
-    match stack.dns_query(addr, embassy_net::dns::DnsQueryType::Aaaa).await {
-        Ok(r) => {
-            for a in r {
-                let _ = addresses.push(a.into());
-            }
-        }
-        Err(e) => warn!("Failed to resolve AAAA for {}: {}", addr, e),
-    }
-    addresses
 }
