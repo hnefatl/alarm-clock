@@ -1,5 +1,7 @@
 use alloc::string::String;
 use defmt::{error, info};
+use embassy_futures::select::Either::First;
+use embassy_futures::select::select;
 use embassy_net::{DhcpConfig, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_hal::peripherals::WIFI;
@@ -8,15 +10,17 @@ use esp_radio::wifi::{ClientConfig, ModeConfig, WifiController, WifiDevice, Wifi
 use static_cell::StaticCell;
 
 static RADIO: StaticCell<Controller<'static>> = StaticCell::new();
-static STACK_RESOURCES: StaticCell<StackResources<5>> = StaticCell::new();
+static STACK_RESOURCES: StaticCell<StackResources<10>> = StaticCell::new();
 static STACK: StaticCell<Stack> = StaticCell::new();
+
+const HOSTNAME: &str = "alarm-clock";
 
 pub fn init(
     spawner: &embassy_executor::Spawner,
     wifi: WIFI<'static>,
     ssid: String,
     password: String,
-) -> &'static mut Stack<'static> {
+) -> Stack<'static> {
     let radio = RADIO.init(esp_radio::init().expect("failed to init radio"));
     let stack_resources = STACK_RESOURCES.init(StackResources::new());
 
@@ -27,7 +31,7 @@ pub fn init(
     let rng = esp_hal::rng::Rng::new();
 
     let mut config = embassy_net::Config::default();
-    config.ipv4 = embassy_net::ConfigV4::Dhcp(DhcpConfig::default());
+    config.ipv4 = embassy_net::ConfigV4::Dhcp(make_dhcp_config());
     config.ipv6 = embassy_net::ConfigV6::Slaac;
 
     let (stack, runner) = embassy_net::new(
@@ -38,16 +42,30 @@ pub fn init(
     );
 
     spawner.must_spawn(net_runner(runner));
-    spawner.must_spawn(maintain_connection(controller, ssid, password));
-    return STACK.init(stack);
+    spawner.must_spawn(maintain_connection(stack, controller, ssid, password));
+    return *STACK.init(stack);
 }
 
 #[embassy_executor::task]
-async fn maintain_connection(mut controller: WifiController<'static>, ssid: String, password: String) {
+async fn maintain_connection(
+    stack: Stack<'static>,
+    mut controller: WifiController<'static>,
+    ssid: String,
+    password: String,
+) {
     loop {
         if esp_radio::wifi::sta_state() == WifiStaState::Connected {
             info!("Waiting until disconnected...");
-            controller.wait_for_event(WifiEvent::StaDisconnected).await;
+            // Run periodically and fix missing default DNS servers.
+            while select(
+                controller.wait_for_event(WifiEvent::StaDisconnected),
+                Timer::after(Duration::from_millis(10_000)),
+            )
+            .await
+            .is_second()
+            {
+                fix_default_dhcp(stack);
+            }
             Timer::after(Duration::from_millis(2000)).await
         }
         match controller.is_started() {
@@ -80,4 +98,34 @@ async fn maintain_connection(mut controller: WifiController<'static>, ssid: Stri
 #[embassy_executor::task]
 async fn net_runner(mut runner: embassy_net::Runner<'static, WifiDevice<'static>>) {
     runner.run().await
+}
+
+fn make_dhcp_config() -> DhcpConfig {
+    let mut s = heapless::String::new();
+    let _ = s.push_str(HOSTNAME);
+    let mut d = DhcpConfig::default();
+    d.hostname = Some(s);
+    d
+}
+
+/// This is a hack: if the DHCP server doesn't provide an explicit DNS server,
+/// the stack doesn't fallback to the gateway.
+/// This function injects the gateway to fix that.
+fn fix_default_dhcp(stack: Stack<'_>) {
+    if let Some(s) = stack.config_v4()
+        && s.dns_servers.is_empty()
+        && let Some(gateway) = s.gateway
+    {
+        let mut s2 = s.clone();
+        let _ = s2.dns_servers.push(gateway);
+        stack.set_config_v4(embassy_net::ConfigV4::Static(s2));
+    }
+    if let Some(s) = stack.config_v6()
+        && s.dns_servers.is_empty()
+        && let Some(gateway) = s.gateway
+    {
+        let mut s2 = s.clone();
+        let _ = s2.dns_servers.push(gateway);
+        stack.set_config_v6(embassy_net::ConfigV6::Static(s2));
+    }
 }
