@@ -10,6 +10,7 @@ name = "alarm_clock"
 [dependencies]
 esp-hal = { version = "~1.0", features = ["defmt", "esp32s3", "unstable"] }
 defmt = "1.0.1"
+static_cell = "2"
 esp-println = { version = "0.16.1", features = ["defmt-espflash", "esp32s3"] }
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["defmt", "esp32s3"] }
 esp-alloc = { version = "0.9.0", features = ["defmt"] }
@@ -27,15 +28,35 @@ esp-rtos = { version = "0.2.0", features = [
 ] }
 embassy-executor = { version = "0.9.1", features = ["defmt"] }
 embedded-hal = "1.0"
+esp-radio = { version = "0.17", features = [
+  "esp32s3",
+  "wifi",
+  "defmt",
+  "unstable",
+] }
+embassy-net = { version = "0.9", features = [
+  "defmt",
+  "medium-ethernet",
+  "icmp",
+  "auto-icmp-echo-reply",
+  "tcp",
+  "dns",
+  "dhcpv4",
+  "proto-ipv4",
+  "proto-ipv6",
+  "slaac",
+  "alloc",
+] }
+embassy-time = { version = "0.5.1" }
 
 # Copied from esp-generate templates.
 [profile.dev]
-opt-level = "s"
+opt-level = 3
 [profile.release]
 codegen-units = 1
 debug = 2
 debug-assertions = false
 incremental = false
 lto = 'fat'
-opt-level = 's'
+opt-level = 3
 overflow-checks = false
