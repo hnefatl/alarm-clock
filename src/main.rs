@@ -47,6 +47,7 @@ async fn main(spawner: Spawner) -> ! {
     let peripherals = esp_hal::init(config);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
+    // TODO: enable light sleep when upgraded to esp-rtos 0.4.0
     esp_rtos::start(timg0.timer0);
     let mut _rtc = Rtc::new(peripherals.LPWR);
     info!("Embassy initialized");
