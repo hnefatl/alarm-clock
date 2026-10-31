@@ -11,7 +11,7 @@ use core_s3::CoreS3;
 use core_s3::audio::WavPcm16;
 use core_s3::bsp::CoreS3DisplayResources;
 use core_s3::power::Axp2101;
-use defmt::{debug, info};
+use defmt::{Debug2Format, debug, error, info};
 use embassy_executor::Spawner;
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::{Duration, Timer};
@@ -24,6 +24,7 @@ use esp_backtrace as _;
 use esp_println as _;
 
 mod audio;
+mod calendar;
 mod dns;
 mod ntp;
 mod secrets;
@@ -39,7 +40,9 @@ defmt::timestamp!("{=u64:us}s", { RTC.try_get().map_or(0, Rtc::current_time_us) 
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-const ALARM_WAV: &[u8] = include_bytes!("../alarm_sounds/alarm.wav");
+// Alarm disabled for faster flashing during testing.
+//const ALARM_WAV: &[u8] = include_bytes!("../alarm_sounds/alarm.wav");
+const ALARM_WAV: &[u8] = &[0u8; 0];
 
 #[allow(
     clippy::large_stack_frames,
@@ -106,12 +109,24 @@ async fn main(spawner: Spawner) -> ! {
         gpio33: peripherals.GPIO33,
         gpio34: peripherals.GPIO34,
     };
-    let alarm = WavPcm16::new(ALARM_WAV).expect("failed to parse alarm sound");
-    audio::play_audio(audio_peripherals, alarm).await;
+    // Alarm disabled for faster flashing during testing.
+    //let alarm = WavPcm16::new(ALARM_WAV).expect("failed to parse alarm sound");
+    //audio::play_audio(audio_peripherals, alarm).await;
 
+    stack.wait_config_up().await;
     loop {
-        info!("time: {}", defmt::Debug2Format(&ntp::get_time(rtc).await));
+        let walltime = ntp::get_time(rtc).await;
+        info!("time: {}", defmt::Debug2Format(&walltime));
         info!("power: {}", pmic.battery_level_percent());
+
+        // Only fetch calendar events starting today: this'll misbehave if a wakeup event
+        // is around midnight, but that's unlikely.
+        let start_date = walltime.truncate_to_day();
+
+        match calendar::get_next_wakeup_time(stack, start_date, &secrets).await {
+            Ok(t) => info!("next wakeup: {:?}", Debug2Format(&t)),
+            Err(e) => error!("next wakeup check failed: {}", e)
+        }
 
         Timer::after(Duration::from_millis(2000)).await;
     }
