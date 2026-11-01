@@ -7,9 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use core::net::SocketAddr;
-
-use defmt::{error, info};
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
@@ -19,6 +17,7 @@ use esp_rtos::{self};
 
 use esp_backtrace as _;
 use esp_println as _;
+use static_cell::StaticCell;
 
 mod dns;
 mod ntp;
@@ -26,6 +25,8 @@ mod secrets;
 mod wifi;
 
 extern crate alloc;
+
+static RTC: StaticCell<Rtc> = StaticCell::new();
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -47,7 +48,8 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     // TODO: enable light sleep when upgraded to esp-rtos 0.4.0
     esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
-    let mut _rtc = Rtc::new(peripherals.RTC_TIMER);
+    let rtc = RTC.init(Rtc::new(peripherals.RTC_TIMER));
+
     info!("Embassy initialized");
 
     esp_alloc::heap_allocator!(size: 64 * 1024);
@@ -59,21 +61,11 @@ async fn main(spawner: Spawner) -> ! {
         secrets::WIFI_PASSWORD.into(),
     );
 
-    loop {
-        Timer::after(Duration::from_millis(2000)).await;
+    ntp::start(spawner, rtc, stack);
 
-        let Ok(ntp_result) = dns::run_against_dns(stack, "time.google.com.", async |addr| {
-            ntp::get_time(stack, SocketAddr::new(addr, ntp::PORT)).await
-        })
-        .await
-        else {
-            error!("get time error");
-            continue;
-        };
-        match ntp::ntp_to_utc(ntp_result) {
-            Ok(t) => info!("time: {}", defmt::Display2Format(&t)),
-            Err(e) => error!("invalid NTP result: {}", defmt::Display2Format(&e)),
-        }
+    loop {
+        info!("time: {}", defmt::Debug2Format(&ntp::get_time(&rtc).await));
+
+        Timer::after(Duration::from_millis(2000)).await;
     }
 }
-
