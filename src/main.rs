@@ -9,10 +9,8 @@
 
 use core::net::SocketAddr;
 
-use alloc::string::{String, ToString};
 use defmt::{error, info};
 use embassy_executor::Spawner;
-use embassy_net::Stack;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::rtc_cntl::{Rtc, reset_reason, wakeup_cause};
@@ -63,7 +61,6 @@ async fn main(spawner: Spawner) -> ! {
 
     loop {
         Timer::after(Duration::from_millis(2000)).await;
-        print_stats(stack);
 
         let Ok(ntp_result) = dns::run_against_dns(stack, "time.google.com.", async |addr| {
             ntp::get_time(stack, SocketAddr::new(addr, ntp::PORT)).await
@@ -80,14 +77,3 @@ async fn main(spawner: Spawner) -> ! {
     }
 }
 
-fn print_stats(stack: Stack<'static>) {
-    let mut cidrs = heapless::Vec::<String, 2>::new();
-    if let Some(c) = stack.config_v4() {
-        let _ = cidrs.push(c.address.to_string());
-    }
-    if let Some(c) = stack.config_v6() {
-        let _ = cidrs.push(c.address.to_string());
-    }
-
-    info!("IPs: {}", cidrs);
-}

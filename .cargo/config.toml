@@ -4,6 +4,12 @@ runner = "espflash flash --monitor --chip esp32s3 --log-format defmt"
 [env]
 DEFMT_LOG = "info"
 
+# https://github.com/smoltcp-rs/smoltcp#feature-flags
+# Max DNS servers per socket: expect 2, one for IPv4 and one for IPv6.
+SMOLTCP_DNS_MAX_SERVER_COUNT = "2"
+# Max address results for a DNS query.
+SMOLTCP_DNS_MAX_RESULT_COUNT = "4"
+
 [build]
 rustflags = ["-C", "link-arg=-nostartfiles"]
 
