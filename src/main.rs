@@ -35,7 +35,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
     clippy::large_stack_frames,
     reason = "it's not unusual to allocate larger buffers etc. in main"
 )]
-#[esp_rtos::main]
+#[esp_hal::main]
 async fn main(spawner: Spawner) -> ! {
     info!(
         "Reset due to: {:?} ({})",
@@ -48,8 +48,8 @@ async fn main(spawner: Spawner) -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     // TODO: enable light sleep when upgraded to esp-rtos 0.4.0
-    esp_rtos::start(timg0.timer0);
-    let mut _rtc = Rtc::new(peripherals.LPWR);
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
+    let mut _rtc = Rtc::new(peripherals.RTC_TIMER);
     info!("Embassy initialized");
 
     esp_alloc::heap_allocator!(size: 64 * 1024);

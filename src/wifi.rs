@@ -4,11 +4,10 @@ use embassy_futures::select::select;
 use embassy_net::{DhcpConfig, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_hal::peripherals::WIFI;
-use esp_radio::Controller;
-use esp_radio::wifi::{ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent, WifiStaState};
+use esp_radio::wifi::{AuthenticationMethodConfig, ControllerConfig, Interface, WifiController, sta::StationConfig};
 use static_cell::StaticCell;
 
-static RADIO: StaticCell<Controller<'static>> = StaticCell::new();
+static RADIO: StaticCell<WifiController<'static>> = StaticCell::new();
 static STACK_RESOURCES: StaticCell<StackResources<10>> = StaticCell::new();
 static STACK: StaticCell<Stack> = StaticCell::new();
 
@@ -20,11 +19,20 @@ pub fn init(
     ssid: String,
     password: String,
 ) -> Stack<'static> {
-    let radio = RADIO.init(esp_radio::init().expect("failed to init radio"));
+    let ssid = ssid.try_into().expect("failed to parse SSID");
+    let password = password.try_into().expect("failed to parse password");
+    let sta_config = esp_radio::wifi::Config::Station(
+        StationConfig::default()
+            .with_ssid(ssid)
+            .with_authentication(AuthenticationMethodConfig::Wpa2Personal(password)),
+    );
+    let controller_config = ControllerConfig::default()
+        .with_country_info(*b"GB")
+        .with_initial_config(sta_config);
+    let controller = RADIO.init(WifiController::new(wifi, controller_config).expect("failed to init wifi"));
     let stack_resources = STACK_RESOURCES.init(StackResources::new());
+    let sta_interface = esp_radio::wifi::Interface::station();
 
-    let wifi_config = esp_radio::wifi::Config::default().with_country_code(*b"GB");
-    let (controller, interfaces) = esp_radio::wifi::new(radio, wifi, wifi_config).expect("failed to init wifi");
     info!("Radio initialized");
 
     let rng = esp_hal::rng::Rng::new();
@@ -34,68 +42,51 @@ pub fn init(
     config.ipv6 = embassy_net::ConfigV6::Slaac;
 
     let (stack, runner) = embassy_net::new(
-        interfaces.sta,
+        sta_interface,
         config,
         stack_resources,
         ((rng.random() as u64) << 32) | rng.random() as u64,
     );
 
-    spawner.must_spawn(net_runner(runner));
-    spawner.must_spawn(maintain_connection(stack, controller, ssid, password));
+    spawner.spawn(net_runner(runner).unwrap());
+    spawner.spawn(maintain_connection(stack, controller).unwrap());
     return *STACK.init(stack);
 }
 
 #[embassy_executor::task]
 async fn maintain_connection(
     stack: Stack<'static>,
-    mut controller: WifiController<'static>,
-    ssid: String,
-    password: String,
+    // TODO: pass by value?
+    controller: &'static mut WifiController<'static>,
 ) {
     loop {
-        if esp_radio::wifi::sta_state() == WifiStaState::Connected {
-            info!("Waiting until disconnected...");
-            // Run periodically and fix missing default DNS servers.
-            while select(
-                controller.wait_for_event(WifiEvent::StaDisconnected),
-                Timer::after(Duration::from_millis(10_000)),
-            )
-            .await
-            .is_second()
-            {
-                fix_default_dhcp(stack);
-            }
-            Timer::after(Duration::from_millis(2000)).await
-        }
-        match controller.is_started() {
-            Ok(true) => {}
-            Ok(false) => {
-                let client_config = ModeConfig::Client(
-                    ClientConfig::default()
-                        .with_ssid(ssid.clone())
-                        .with_password(password.clone()),
-                );
-                controller.set_config(&client_config).expect("failed to set config");
-                info!("Starting wifi");
-                controller.start_async().await.expect("failed to start wifi");
-                info!("Wifi started!");
-            }
-            Err(e) => error!("Wifi error: {}", e),
-        }
-
-        info!("Connecting...");
         match controller.connect_async().await {
-            Ok(()) => info!("Wifi connected!"),
+            Ok(info) => info!("Wifi connected: {}", info),
             Err(e) => {
                 error!("Failed to connect to wifi: {}", e);
-                Timer::after(Duration::from_millis(5000)).await
+                Timer::after(Duration::from_millis(5000)).await;
+                continue;
             }
         }
+
+        // Wait for disconnect while periodically fixing DNS.
+        // TODO: See if the newer esp-radio version doesn't need DNS fix?
+        // TODO: stack.wait_config_up()?
+        while select(
+            controller.wait_for_disconnect_async(),
+            Timer::after(Duration::from_millis(10_000)),
+        )
+        .await
+        .is_second()
+        {
+            fix_default_dhcp(stack);
+        }
+        Timer::after(Duration::from_millis(2000)).await
     }
 }
 
 #[embassy_executor::task]
-async fn net_runner(mut runner: embassy_net::Runner<'static, WifiDevice<'static>>) {
+async fn net_runner(mut runner: embassy_net::Runner<'static, Interface>) {
     runner.run().await
 }
 

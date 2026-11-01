@@ -2,7 +2,9 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs";
     esp-rs-nix = {
-      url = "github:leighleighleigh/esp-rs-nix";
+      #url = "github:leighleighleigh/esp-rs-nix";
+      # TODO: Switch back once https://github.com/leighleighleigh/esp-rs-nix/pull/33 is merged.
+      url = "github:hnefatl/esp-rs-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
