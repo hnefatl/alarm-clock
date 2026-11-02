@@ -36,7 +36,6 @@ pub fn start(spawner: Spawner, rtc: &'static Rtc<'static>, stack: embassy_net::S
 pub async fn get_time(rtc: &Rtc<'_>) -> UtcDateTime {
     let t = LAST_STATE.get().await.lock().await;
     let now = rtc.time_since_power_up();
-    // TODO: use offset?
     return t.utc + time::Duration::microseconds((now - t.fetched_time).as_micros() as i64);
 }
 
@@ -91,8 +90,8 @@ async fn get_ntp(stack: embassy_net::Stack<'_>, addr: SocketAddr) -> anyhow::Res
 }
 
 fn ntp_to_utc(result: NtpResult) -> Result<UtcDateTime, time::error::ComponentRange> {
-    let secs = result.sec() as i64;
-    let nanos = ((result.sec_fraction() as u64 * 1_000_000_000) >> 32) as u32;
-    let total_nanos = (secs as i128 * 1_000_000_000) + nanos as i128;
-    UtcDateTime::from_unix_timestamp_nanos(total_nanos)
+    let mut nanos = result.sec() as i128 * 1_000_000_000;
+    nanos += (result.sec_fraction() as i128 * 1_000_000_000) / (u32::MAX as i128);
+    // TODO: does this need to use offset?
+    UtcDateTime::from_unix_timestamp_nanos(nanos)
 }
