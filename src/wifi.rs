@@ -32,8 +32,6 @@ pub fn init(
     let stack_resources = STACK_RESOURCES.init(StackResources::new());
     let sta_interface = esp_radio::wifi::Interface::station();
 
-    info!("Radio initialized");
-
     let mut config = embassy_net::Config::default();
     config.ipv4 = embassy_net::ConfigV4::Dhcp(set_dhcp_hostname(DhcpConfig::default()));
     config.ipv6 = embassy_net::ConfigV6::Slaac;

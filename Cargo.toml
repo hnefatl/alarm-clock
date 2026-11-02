@@ -59,6 +59,7 @@ sntpc-net-embassy = { version = "0.11", features = ["ipv6"] }
 anyhow = { version = "1", default-features = false }
 heapless = { version = "0.9", features = ["defmt"] }
 time = { version = "0.3", default-features = false }
+core-s3 = { version = "0.5", features = ["defmt", "esp-hal" ]}
 
 # Copied from esp-generate templates.
 [profile.dev]
