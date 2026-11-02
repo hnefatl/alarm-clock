@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use core_s3::CoreS3;
+use core_s3::audio::WavPcm16;
 use core_s3::bsp::CoreS3DisplayResources;
 use core_s3::power::Axp2101;
 use defmt::info;
@@ -22,6 +23,7 @@ use esp_backtrace as _;
 use esp_println as _;
 use static_cell::StaticCell;
 
+mod audio;
 mod dns;
 mod ntp;
 mod secrets;
@@ -32,6 +34,8 @@ extern crate alloc;
 static RTC: StaticCell<Rtc> = StaticCell::new();
 
 esp_bootloader_esp_idf::esp_app_desc!();
+
+const ALARM_WAV: &[u8] = include_bytes!("../alarm_sounds/alarm.wav");
 
 #[allow(
     clippy::large_stack_frames,
@@ -82,8 +86,21 @@ async fn main(spawner: Spawner) -> ! {
     .expect("failed to initialise CoreS3 board");
     info!("CoreS3 initialised");
 
-    let mut pmic = Axp2101::new(parts.internal_i2c);
+    let internal_i2c = audio::init(parts.internal_i2c);
+    info!("Audio initialised");
+
+    let mut pmic = Axp2101::new(internal_i2c);
     pmic.set_display_backlight(0).expect("failed to set display backlight");
+
+    let audio_peripherals = audio::AudioPeripherals {
+        i2s1: peripherals.I2S1,
+        dma_ch1: peripherals.DMA_CH1,
+        gpio13: peripherals.GPIO13,
+        gpio33: peripherals.GPIO33,
+        gpio34: peripherals.GPIO34,
+    };
+    let alarm = WavPcm16::new(ALARM_WAV).expect("failed to parse alarm sound");
+    audio::play_audio(audio_peripherals, alarm).await;
 
     loop {
         info!("time: {}", defmt::Debug2Format(&ntp::get_time(&rtc).await));
