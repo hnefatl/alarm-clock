@@ -42,11 +42,13 @@ pub async fn get_time(rtc: &Rtc<'_>) -> UtcDateTime {
 
 #[embassy_executor::task]
 async fn refresh_time(rtc: &'static Rtc<'static>, stack: embassy_net::Stack<'static>) {
+    let mut dns_resolver = crate::dns::DNSResolver::<2>::new(stack);
     loop {
-        let Ok(ntp_result) = crate::dns::run_against_dns(stack, NTP_SERVER, async |addr| {
-            get_ntp(stack, SocketAddr::new(addr, PORT)).await
-        })
-        .await
+        let Ok(ntp_result) = dns_resolver
+            .run_against_dns(NTP_SERVER, async |addr| {
+                get_ntp(stack, SocketAddr::new(addr, PORT)).await
+            })
+            .await
         else {
             error!("get time error");
             Timer::after_secs(5).await;
