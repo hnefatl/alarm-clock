@@ -1,0 +1,11 @@
+[package]
+name = "refresh_token_generator"
+edition = "2024"
+version = "0.1.0"
+
+[dependencies]
+reqwest = { version = "0.13", features = ["blocking", "form", "json"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = { version = "2", features = ["serde"] }
