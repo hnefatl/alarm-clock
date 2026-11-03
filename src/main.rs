@@ -13,6 +13,7 @@ use core_s3::bsp::CoreS3DisplayResources;
 use core_s3::power::Axp2101;
 use defmt::info;
 use embassy_executor::Spawner;
+use embassy_sync::once_lock::OnceLock;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::rtc_cntl::{Rtc, reset_reason, wakeup_cause};
@@ -21,7 +22,6 @@ use esp_rtos::{self};
 
 use esp_backtrace as _;
 use esp_println as _;
-use static_cell::StaticCell;
 
 mod audio;
 mod dns;
@@ -31,7 +31,11 @@ mod wifi;
 
 extern crate alloc;
 
-static RTC: StaticCell<Rtc> = StaticCell::new();
+static RTC: OnceLock<Rtc> = OnceLock::new();
+
+// Print the timestamp from UTC on each log line.
+// https://defmt.ferrous-systems.com/timestamps
+defmt::timestamp!("{=u64:us}s", { RTC.try_get().map_or(0, Rtc::current_time_us) });
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -68,7 +72,11 @@ async fn main(spawner: Spawner) -> ! {
     );
     info!("WiFi started");
 
-    let rtc = RTC.init(Rtc::new(peripherals.RTC_TIMER));
+    if let Err(_) = RTC.init(Rtc::new(peripherals.RTC_TIMER)) {
+        panic!("Failed to init RTC");
+    };
+    let rtc = RTC.get().await;
+
     ntp::start(spawner, rtc, stack);
     info!("NTP started");
 
@@ -103,7 +111,7 @@ async fn main(spawner: Spawner) -> ! {
     audio::play_audio(audio_peripherals, alarm).await;
 
     loop {
-        info!("time: {}", defmt::Debug2Format(&ntp::get_time(&rtc).await));
+        info!("time: {}", defmt::Debug2Format(&ntp::get_time(rtc).await));
         info!("power: {}", pmic.battery_level_percent());
 
         Timer::after(Duration::from_millis(2000)).await;
