@@ -1,11 +1,8 @@
 [package]
-edition = "2024"
 name = "alarm_clock"
+edition = "2024"
 rust-version = "1.96"
 version = "0.1.0"
-
-[[bin]]
-name = "alarm_clock"
 
 [dependencies]
 esp-hal = { version = "1.2", features = ["defmt", "esp32s3", "unstable"] }
@@ -59,7 +56,7 @@ sntpc-net-embassy = { version = "0.11", features = ["ipv6"] }
 anyhow = { version = "1", default-features = false }
 heapless = { version = "0.9", features = ["defmt"] }
 time = { version = "0.3", default-features = false }
-core-s3 = { version = "0.5", features = ["defmt", "esp-hal" ]}
+core-s3 = { version = "0.5", features = ["defmt", "esp-hal"] }
 
 # Copied from esp-generate templates.
 [profile.dev]
