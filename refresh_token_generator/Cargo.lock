@@ -619,6 +619,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lib"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -822,6 +829,7 @@ name = "refresh_token_generator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "lib",
  "reqwest",
  "serde",
  "serde_json",

@@ -13,19 +13,6 @@ use std::{
 const SECRET_PATH: &str = "../secrets/calendar_secrets.json";
 const REFRESH_TOKEN_PATH: &str = "../secrets/calendar_refresh_token.txt";
 
-#[derive(serde::Deserialize, Debug)]
-struct ClientSecretsFile {
-    // The field in JSON can be called either of these aliases.
-    #[serde(alias = "installed")]
-    #[serde(alias = "web")]
-    inner: ClientSecrets,
-}
-#[derive(serde::Deserialize, Debug)]
-struct ClientSecrets {
-    client_id: String,
-    client_secret: String,
-}
-
 fn main() -> anyhow::Result<()> {
     let refresh_token_path = Path::new(REFRESH_TOKEN_PATH);
     if refresh_token_path.exists() {
@@ -34,7 +21,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let secrets_data = fs::read(SECRET_PATH).context(format!("failed to read {}", SECRET_PATH))?;
-    let secrets: ClientSecretsFile = serde_json::from_slice(&secrets_data)?;
+    let secrets: lib::ClientSecretsFile = serde_json::from_slice(&secrets_data)?;
 
     let client = Client::new();
     let resp = send_device_code_request(&client, &secrets.inner)?;
@@ -59,7 +46,7 @@ fn main() -> anyhow::Result<()> {
     return Ok(());
 }
 
-fn send_device_code_request(client: &Client, secrets: &ClientSecrets) -> anyhow::Result<DeviceCodeResponse> {
+fn send_device_code_request(client: &Client, secrets: &lib::ClientSecrets) -> anyhow::Result<DeviceCodeResponse> {
     let params = [
         ("client_id", secrets.client_id.as_ref()),
         ("scope", "https://www.googleapis.com/auth/calendar.readonly"),
@@ -74,7 +61,7 @@ fn send_device_code_request(client: &Client, secrets: &ClientSecrets) -> anyhow:
     Ok(resp)
 }
 
-fn send_token_request(client: &Client, secrets: &ClientSecrets, device_code: &str) -> anyhow::Result<TokenResponse> {
+fn send_token_request(client: &Client, secrets: &lib::ClientSecrets, device_code: &str) -> anyhow::Result<TokenResponse> {
     let params = [
         ("client_id", secrets.client_id.as_ref()),
         ("client_secret", secrets.client_secret.as_ref()),

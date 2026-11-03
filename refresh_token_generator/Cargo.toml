@@ -4,6 +4,7 @@ edition = "2024"
 version = "0.1.0"
 
 [dependencies]
+lib = { path = "../lib" }
 reqwest = { version = "0.13", features = ["blocking", "form", "json"] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
