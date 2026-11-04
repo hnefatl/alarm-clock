@@ -42,6 +42,8 @@ dependencies = [
  "esp-rtos",
  "esp-sync",
  "heapless 0.9.3",
+ "lib",
+ "serde-json-core",
  "sntpc",
  "sntpc-net-embassy",
  "sntpc-time-embassy",
@@ -1554,6 +1556,7 @@ checksum = "25ba4bd83f9415b58b4ed8dc5714c76e626a105be4646c02630ad730ad3b5aa4"
 dependencies = [
  "defmt 1.1.1",
  "hash32 0.3.1",
+ "serde_core",
  "stable_deref_trait",
 ]
 
@@ -1672,6 +1675,13 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
+name = "lib"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "libc"
@@ -2058,6 +2068,18 @@ checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-json-core"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d51e6795fbc00a1b26d78c7a0dbda143215d9dd0ee27c8a63ae0e1ccd6b83706"
+dependencies = [
+ "defmt 1.1.1",
+ "heapless 0.9.3",
+ "ryu",
+ "serde",
 ]
 
 [[package]]

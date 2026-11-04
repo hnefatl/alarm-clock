@@ -5,6 +5,7 @@ rust-version = "1.96"
 version = "0.1.0"
 
 [dependencies]
+lib = { path = "../lib" }
 esp-hal = { version = "1.2", features = ["defmt", "esp32s3", "unstable"] }
 defmt = "1"
 static_cell = "2"
@@ -57,6 +58,7 @@ anyhow = { version = "1", default-features = false }
 heapless = { version = "0.9", features = ["defmt"] }
 time = { version = "0.3", default-features = false }
 core-s3 = { version = "0.5", features = ["defmt", "esp-hal"] }
+serde-json-core = { version = "0.7", features = ["defmt", "custom-error-messages"] }
 
 # Copied from esp-generate templates.
 [profile.dev]

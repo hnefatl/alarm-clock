@@ -15,8 +15,8 @@ const HOSTNAME: &str = "alarm-clock";
 pub fn init(
     spawner: &embassy_executor::Spawner,
     wifi: WIFI<'static>,
-    ssid: String,
-    password: String,
+    ssid: &str,
+    password: &str,
 ) -> Stack<'static> {
     let ssid = ssid.try_into().expect("failed to parse SSID");
     let password = password.try_into().expect("failed to parse password");

@@ -11,7 +11,7 @@ use core_s3::CoreS3;
 use core_s3::audio::WavPcm16;
 use core_s3::bsp::CoreS3DisplayResources;
 use core_s3::power::Axp2101;
-use defmt::info;
+use defmt::{debug, info};
 use embassy_executor::Spawner;
 use embassy_sync::once_lock::OnceLock;
 use embassy_time::{Duration, Timer};
@@ -47,11 +47,15 @@ const ALARM_WAV: &[u8] = include_bytes!("../alarm_sounds/alarm.wav");
 )]
 #[esp_hal::main]
 async fn main(spawner: Spawner) -> ! {
+    // TODO: why does ".expect" not log the panic message in the error handler?
     info!(
         "Reset due to: {:?} ({})",
         defmt::Debug2Format(&reset_reason(esp_hal::system::Cpu::ProCpu)),
         wakeup_cause(),
     );
+
+    let secrets = secrets::init();
+    debug!("Secrets: {:?}", defmt::Debug2Format(&secrets));
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -67,8 +71,8 @@ async fn main(spawner: Spawner) -> ! {
     let stack = wifi::init(
         &spawner,
         peripherals.WIFI,
-        secrets::WIFI_SSID.into(),
-        secrets::WIFI_PASSWORD.into(),
+        secrets.wifi_ssid,
+        secrets.wifi_password,
     );
     info!("WiFi started");
 
