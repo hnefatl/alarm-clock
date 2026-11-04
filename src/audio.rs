@@ -1,6 +1,6 @@
 use core_s3::audio::AudioSource;
 use core_s3::audio::{Aw88298, SpeakerConfig};
-use defmt::error;
+use defmt::{debug, error};
 use esp_hal::{
     Blocking, dma_tx_buffer,
     i2c::master::I2c,
@@ -52,6 +52,7 @@ pub async fn play_audio<'a, S: AudioSource>(peripherals: AudioPeripherals<'a>, m
 
     let mut tx_buffer = dma_tx_buffer!(BUFFER_LENGTH).expect("failed to init tx buffer");
     let mut data = heapless::Vec::<u8, BUFFER_LENGTH>::new();
+    debug!("Audio: starting playing...");
     loop {
         data.clear();
         while !data.is_full() {
@@ -64,6 +65,7 @@ pub async fn play_audio<'a, S: AudioSource>(peripherals: AudioPeripherals<'a>, m
             break;
         };
         tx_buffer.fill(&data);
+        debug!("Audio: filled {} bytes", data.len());
 
         let transfer = match i2s_tx.write(tx_buffer) {
             Ok(transfer) => transfer,
@@ -72,6 +74,7 @@ pub async fn play_audio<'a, S: AudioSource>(peripherals: AudioPeripherals<'a>, m
                 return;
             }
         };
+        debug!("Audio: started transfer");
         (i2s_tx, tx_buffer) = match transfer.wait_async().await {
             (Ok(()), returned_i2s_tx, returned_tx_buffer) => (returned_i2s_tx, returned_tx_buffer),
             (Err(e), _, _) => {
@@ -79,5 +82,7 @@ pub async fn play_audio<'a, S: AudioSource>(peripherals: AudioPeripherals<'a>, m
                 return;
             }
         };
+        debug!("Audio: finished transfer");
     }
+    debug!("Audio: finished playing.");
 }
