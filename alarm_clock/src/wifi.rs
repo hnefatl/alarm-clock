@@ -102,7 +102,6 @@ async fn fix_dns(stack: Stack<'static>) {
         if stack.config_v4() != old_config_v4 || stack.config_v6() != old_config_v6 {
             old_config_v4 = stack.config_v4();
             old_config_v6 = stack.config_v6();
-            print_ip_configuration(stack);
         }
 
         // Wait for the IP config to reset, or checks.
@@ -117,28 +116,4 @@ fn set_dhcp_hostname(mut config: DhcpConfig) -> DhcpConfig {
     let _ = s.push_str(HOSTNAME);
     config.hostname = Some(s);
     config
-}
-
-fn print_ip_configuration(stack: Stack<'static>) {
-    let mut cidrs = heapless::Vec::<String, 2>::new();
-    if let Some(c) = stack.config_v4() {
-        let _ = cidrs.push(c.address.to_string());
-    }
-    if let Some(c) = stack.config_v6() {
-        let _ = cidrs.push(c.address.to_string());
-    }
-    info!("IPs: {}", cidrs);
-
-    let mut dns = heapless::Vec::<String, 32>::new();
-    if let Some(c) = stack.config_v4() {
-        for d in c.dns_servers {
-            let _ = dns.push(d.to_string());
-        }
-    }
-    if let Some(c) = stack.config_v6() {
-        for d in c.dns_servers {
-            let _ = dns.push(d.to_string());
-        }
-    }
-    info!("DNS: {}", dns);
 }
