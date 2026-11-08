@@ -61,19 +61,14 @@ async fn main(spawner: Spawner) -> ! {
     let peripherals = esp_hal::init(config);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    // TODO: enable light sleep when upgraded to esp-rtos 0.4.0
-    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
+    let sleep = esp_rtos::sleep::configure(peripherals.LPWR);
+    esp_rtos::start_with_idle_hook(timg0.timer0, peripherals.FROM_CPU_INTR0, sleep.light_sleep_hook);
     info!("Embassy initialised");
 
     esp_alloc::heap_allocator!(size: 64 * 1024);
     info!("Heap initialised");
 
-    let stack = wifi::init(
-        &spawner,
-        peripherals.WIFI,
-        secrets.wifi_ssid,
-        secrets.wifi_password,
-    );
+    let stack = wifi::init(&spawner, peripherals.WIFI, secrets.wifi_ssid, secrets.wifi_password);
     info!("WiFi started");
 
     if let Err(_) = RTC.init(Rtc::new(peripherals.RTC_TIMER)) {
