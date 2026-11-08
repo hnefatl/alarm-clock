@@ -43,6 +43,7 @@ pub async fn get_time(rtc: &Rtc<'_>) -> UtcDateTime {
 async fn refresh_time(rtc: &'static Rtc<'static>, stack: embassy_net::Stack<'static>) {
     let mut dns_resolver = crate::dns::DNSResolver::<2>::new(stack);
     loop {
+        stack.wait_config_up().await;
         let Ok(ntp_result) = dns_resolver
             .run_against_dns(NTP_SERVER, async |addr| {
                 get_ntp(stack, SocketAddr::new(addr, PORT)).await
