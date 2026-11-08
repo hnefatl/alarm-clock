@@ -43,8 +43,13 @@ embassy-net = { version = "0.9", features = [
   "dhcpv4",
   "dhcpv4-hostname",
   "proto-ipv4",
-  "proto-ipv6",
-  "slaac",
+  # embassy-net IPv6 stack currently only ~really supports holding a single active
+  # address at a time, and it picks link-local or ULA more than GUA, so is basically
+  # useless.
+  # Seems like this might be fixed in https://github.com/embassy-rs/embassy/issues/6796?
+  # TODO: re-enable in the future
+  #"proto-ipv6",
+  #"slaac",
   "alloc",
 ] }
 embassy-time = "0.5.1"
@@ -53,12 +58,18 @@ embassy-sync = "0.8"
 esp-sync = "0.3"
 sntpc = { version = "0.11", features = ["defmt"] }
 sntpc-time-embassy = "0.6"
-sntpc-net-embassy = { version = "0.11", features = ["ipv6"] }
+sntpc-net-embassy = { version = "0.11", features = [
+  # TODO: re-enable, see above
+  #"ipv6"
+] }
 anyhow = { version = "1", default-features = false }
 heapless = { version = "0.9", features = ["defmt"] }
 time = { version = "0.3", default-features = false }
 core-s3 = { version = "0.5", features = ["defmt", "esp-hal"] }
-serde-json-core = { version = "0.7", features = ["defmt", "custom-error-messages"] }
+serde-json-core = { version = "0.7", features = [
+  "defmt",
+  "custom-error-messages",
+] }
 
 # Copied from esp-generate templates.
 [profile.dev]

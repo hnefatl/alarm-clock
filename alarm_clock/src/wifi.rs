@@ -1,4 +1,3 @@
-use alloc::string::{String, ToString};
 use defmt::{error, info};
 use embassy_futures::select::select;
 use embassy_net::{DhcpConfig, Stack, StackResources};
@@ -34,7 +33,6 @@ pub fn init(
 
     let mut config = embassy_net::Config::default();
     config.ipv4 = embassy_net::ConfigV4::Dhcp(set_dhcp_hostname(DhcpConfig::default()));
-    config.ipv6 = embassy_net::ConfigV6::Slaac;
 
     let rng = esp_hal::rng::Rng::new();
     let (stack, runner) = embassy_net::new(
@@ -78,7 +76,6 @@ async fn net_runner(mut runner: embassy_net::Runner<'static, Interface>) {
 #[embassy_executor::task]
 async fn fix_dns(stack: Stack<'static>) {
     let mut old_config_v4 = None;
-    let mut old_config_v6 = None;
     loop {
         stack.wait_config_up().await;
 
@@ -90,24 +87,13 @@ async fn fix_dns(stack: Stack<'static>) {
             let _ = s2.dns_servers.push(gateway);
             stack.set_config_v4(embassy_net::ConfigV4::Static(s2));
         }
-        if let Some(s) = stack.config_v6()
-            && s.dns_servers.is_empty()
-            && let Some(gateway) = s.gateway
-        {
-            let mut s2 = s.clone();
-            let _ = s2.dns_servers.push(gateway);
-            stack.set_config_v6(embassy_net::ConfigV6::Static(s2));
-        }
 
-        if stack.config_v4() != old_config_v4 || stack.config_v6() != old_config_v6 {
+        if stack.config_v4() != old_config_v4 {
             old_config_v4 = stack.config_v4();
-            old_config_v6 = stack.config_v6();
         }
 
-        // Wait for the IP config to reset, or checks.
-        // This is necessary because e.g. IPv6 comes up first, we fix the IPv6 DNS,
-        // but then IPv4 comes up and we don't set its DNS.
-        select(stack.wait_config_down(), Timer::after(Duration::from_millis(2000))).await;
+        // Wait for the IP config to reset, or periodic checks.
+        select(stack.wait_config_down(), Timer::after(Duration::from_millis(10000))).await;
     }
 }
 

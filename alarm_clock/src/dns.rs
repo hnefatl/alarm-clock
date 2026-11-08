@@ -62,14 +62,6 @@ impl<'a, const N: usize> DNSResolver<'a, N> {
             }
             Err(e) => warn!("Failed to resolve A for {}: {}", addr, e),
         }
-        match self.stack.dns_query(addr, embassy_net::dns::DnsQueryType::Aaaa).await {
-            Ok(r) => {
-                for a in r {
-                    let _ = addresses.push(a.into());
-                }
-            }
-            Err(e) => warn!("Failed to resolve AAAA for {}: {}", addr, e),
-        }
         addresses
     }
 }
