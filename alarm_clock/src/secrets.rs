@@ -1,5 +1,4 @@
 // Secrets embedded into the image.
-// The files have to have no trailing whitepace/newlines, `trim` is non-const :/
 
 const WIFI_SSID: &'static str = include_str!("../../secrets/wifi_ssid.txt");
 const WIFI_PASSWORD: &'static str = include_str!("../../secrets/wifi_password.txt");
@@ -18,9 +17,9 @@ pub fn init() -> Secrets {
     let calendar_secrets_file = serde_json_core::from_str::<lib::ClientSecretsFile>(CALENDAR_SECRETS)
         .expect("failed to parse calendar secrets file");
     Secrets {
-        wifi_ssid: WIFI_SSID,
-        wifi_password: WIFI_PASSWORD,
+        wifi_ssid: WIFI_SSID.trim(),
+        wifi_password: WIFI_PASSWORD.trim(),
         calendar_secrets: calendar_secrets_file.0.inner,
-        calendar_refresh_token: CALENDAR_REFRESH_TOKEN,
+        calendar_refresh_token: CALENDAR_REFRESH_TOKEN.trim(),
     }
 }
