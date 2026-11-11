@@ -33,10 +33,22 @@ mod wifi;
 extern crate alloc;
 
 static RTC: OnceLock<Rtc> = OnceLock::new();
+static STARTUP_US: OnceLock<u64> = OnceLock::new();
 
-// Print the timestamp from UTC on each log line.
+// Print the timestamp since reset on each log line.
+// We need to track when the current program started, because
+// the RTC shows the time since last power cycle, which might've been a while
+// back if running on battery.
 // https://defmt.ferrous-systems.com/timestamps
-defmt::timestamp!("{=u64:us}s", { RTC.try_get().map_or(0, Rtc::current_time_us) });
+defmt::timestamp!("{=u64:us}s", {
+    if let Some(rtc) = RTC.try_get() {
+        let current_us = rtc.current_time_us();
+        let startup_us = STARTUP_US.try_get().unwrap_or(&0);
+        current_us - startup_us
+    } else {
+        0
+    }
+});
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -57,11 +69,16 @@ async fn main(spawner: Spawner) -> ! {
         wakeup_cause(),
     );
 
-    let secrets = secrets::init();
-    debug!("Secrets: {:?}", defmt::Debug2Format(&secrets));
-
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+
+    if let Err(_) = RTC.init(Rtc::new(peripherals.RTC_TIMER)) {
+        panic!("Failed to init RTC");
+    };
+    let rtc = RTC.get().await;
+    STARTUP_US
+        .init(rtc.current_time_us())
+        .expect("STARTUP_CYCLES already set");
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sleep = esp_rtos::sleep::configure(peripherals.LPWR);
@@ -71,13 +88,11 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 64 * 1024);
     info!("Heap initialised");
 
+    let secrets = secrets::init();
+    debug!("Secrets: {:?}", defmt::Debug2Format(&secrets));
+
     let stack = wifi::init(&spawner, peripherals.WIFI, secrets.wifi_ssid, secrets.wifi_password);
     info!("WiFi started");
-
-    if let Err(_) = RTC.init(Rtc::new(peripherals.RTC_TIMER)) {
-        panic!("Failed to init RTC");
-    };
-    let rtc = RTC.get().await;
 
     ntp::start(spawner, rtc, stack);
     info!("NTP started");
@@ -125,7 +140,7 @@ async fn main(spawner: Spawner) -> ! {
 
         match calendar::get_next_wakeup_time(stack, start_date, &secrets).await {
             Ok(t) => info!("next wakeup: {:?}", Debug2Format(&t)),
-            Err(e) => error!("next wakeup check failed: {}", e)
+            Err(e) => error!("next wakeup check failed: {}", e),
         }
 
         Timer::after(Duration::from_millis(2000)).await;
