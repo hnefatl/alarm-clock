@@ -11,12 +11,7 @@ static STACK: StaticCell<Stack> = StaticCell::new();
 
 const HOSTNAME: &str = "alarm-clock";
 
-pub fn init(
-    spawner: &embassy_executor::Spawner,
-    wifi: WIFI<'static>,
-    ssid: &str,
-    password: &str,
-) -> Stack<'static> {
+pub fn init(spawner: &embassy_executor::Spawner, wifi: WIFI<'static>, ssid: &str, password: &str) -> Stack<'static> {
     let ssid = ssid.try_into().expect("failed to parse SSID");
     let password = password.try_into().expect("failed to parse password");
     let sta_config = esp_radio::wifi::Config::Station(

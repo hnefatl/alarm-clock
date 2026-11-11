@@ -61,7 +61,11 @@ fn send_device_code_request(client: &Client, secrets: &lib::ClientSecrets) -> an
     Ok(resp)
 }
 
-fn send_token_request(client: &Client, secrets: &lib::ClientSecrets, device_code: &str) -> anyhow::Result<TokenResponse> {
+fn send_token_request(
+    client: &Client,
+    secrets: &lib::ClientSecrets,
+    device_code: &str,
+) -> anyhow::Result<TokenResponse> {
     let params = [
         ("client_id", secrets.client_id.as_ref()),
         ("client_secret", secrets.client_secret.as_ref()),
