@@ -1,4 +1,5 @@
 use alloc::string::{String, ToString};
+use anyhow::bail;
 use core::net::IpAddr;
 use heapless::index_map::FnvIndexMap;
 
@@ -19,17 +20,22 @@ impl<'a, const N: usize> DNSResolver<'a, N> {
     }
 
     /// Run a callback against multiple DNS-resolved addresses until one succeeds.
-    pub async fn run_against_dns<T, E, F: AsyncFn(IpAddr) -> Result<T, E>>(
+    pub async fn run_against_dns<T, E: core::fmt::Display, F: AsyncFn(IpAddr) -> Result<T, E>>(
         &mut self,
         addr: &str,
         op: F,
-    ) -> Result<T, ()> {
+    ) -> anyhow::Result<T> {
+        let mut last_error = None;
         for addr in self.query(addr).await {
-            if let Ok(r) = op(addr).await {
-                return Ok(r);
+            match op(addr).await {
+                Ok(r) => return Ok(r),
+                Err(e) => last_error = Some(e),
             }
         }
-        Err(())
+        match last_error {
+            Some(e) => bail!("no resolved IPs for {} succeeded, last error: {}", addr, e),
+            None => bail!("failed to resolve any IPs for {}", addr),
+        }
     }
 
     /// Do a DNS query, falling back to cache if it fails.

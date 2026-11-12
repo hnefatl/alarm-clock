@@ -7,14 +7,15 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use anyhow::Context;
 use core_s3::CoreS3;
 use core_s3::audio::WavPcm16;
 use core_s3::bsp::CoreS3DisplayResources;
 use core_s3::power::Axp2101;
-use defmt::{Debug2Format, debug, error, info};
+use defmt::{Debug2Format, Display2Format, debug, error, info};
 use embassy_executor::Spawner;
 use embassy_sync::once_lock::OnceLock;
-use embassy_time::{Duration, Timer};
+use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
 use esp_hal::rtc_cntl::{Rtc, reset_reason, wakeup_cause};
 use esp_hal::timer::timg::TimerGroup;
@@ -94,9 +95,6 @@ async fn main(spawner: Spawner) -> ! {
     let stack = wifi::init(&spawner, peripherals.WIFI, secrets.wifi_ssid, secrets.wifi_password);
     info!("WiFi started");
 
-    ntp::start(spawner, rtc, stack);
-    info!("NTP started");
-
     let parts = CoreS3::init_display(CoreS3DisplayResources {
         i2c0: peripherals.I2C0,
         i2c_sda: peripherals.GPIO12,
@@ -128,21 +126,33 @@ async fn main(spawner: Spawner) -> ! {
     //let alarm = WavPcm16::new(ALARM_WAV).expect("failed to parse alarm sound");
     //audio::play_audio(audio_peripherals, alarm).await;
 
-    stack.wait_config_up().await;
-    loop {
-        let walltime = ntp::get_time(rtc).await;
-        info!("time: {}", defmt::Debug2Format(&walltime));
+    let mut ntp = ntp::NTP::new(stack);
+
+    let mut do_loop = async || -> anyhow::Result<()> {
+        stack.wait_config_up().await;
+
         info!("power: {}", pmic.battery_level_percent());
+
+        let walltime = ntp.get_utc(rtc).await.context("Failed to get latest time")?;
+        info!("time: {}", Display2Format(&walltime));
 
         // Only fetch calendar events starting today: this'll misbehave if a wakeup event
         // is around midnight, but that's unlikely.
         let start_date = walltime.truncate_to_day();
+        let wakeup_time = calendar::get_next_wakeup_time(stack, start_date, &secrets)
+            .await
+            .context("next wakeup check failed")?;
 
-        match calendar::get_next_wakeup_time(stack, start_date, &secrets).await {
-            Ok(t) => info!("next wakeup: {:?}", Debug2Format(&t)),
-            Err(e) => error!("next wakeup check failed: {}", e),
+        info!("next wakeupevent at: {:?}", Debug2Format(&wakeup_time));
+        Ok(())
+    };
+
+    loop {
+        if let Err(e) = do_loop().await {
+            // Use alloc format to trigger the expanded "alternate" anyhow error message
+            // which includes details on wrapped errors.
+            error!("{}", alloc::format!("{:#}", e));
         }
-
-        Timer::after(Duration::from_millis(2000)).await;
+        Timer::after_secs(5).await;
     }
 }

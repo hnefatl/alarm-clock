@@ -1,12 +1,9 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use core::default::Default;
 use core::net::SocketAddr;
-use defmt::{Debug2Format, error};
-use embassy_executor::Spawner;
+use defmt::Display2Format;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_sync::mutex::Mutex;
-use embassy_sync::once_lock::OnceLock;
-use embassy_time::Timer;
 use esp_hal::rtc_cntl::Rtc;
 use esp_sync::RawMutex;
 use sntpc::{NtpContext, NtpResult};
@@ -15,7 +12,6 @@ use time::UtcDateTime;
 
 /// Standard NTP port.
 const PORT: u16 = 123;
-const NTP_POLL_INTERVAL: embassy_time::Duration = embassy_time::Duration::from_secs(60);
 const NTP_SERVER: &'static str = "time.google.com.";
 
 #[derive(Debug, Copy, Clone)]
@@ -25,51 +21,54 @@ struct NtpState {
     /// The time since boot when the NTP result was fetched.
     fetched_time: esp_hal::time::Duration,
 }
-
-static LAST_STATE: OnceLock<Mutex<RawMutex, NtpState>> = OnceLock::new();
-
-pub fn start(spawner: Spawner, rtc: &'static Rtc<'static>, stack: embassy_net::Stack<'static>) {
-    spawner.spawn(refresh_time(rtc, stack).expect("failed to init ntp"));
+impl NtpState {
+    /// Approximate the time based on how long it's been since we got an NTP update
+    fn time_now(&self, rtc: &Rtc<'_>) -> UtcDateTime {
+        let now = rtc.time_since_power_up();
+        self.utc + time::Duration::microseconds((now - self.fetched_time).as_micros() as i64)
+    }
 }
 
-/// Get the latest approximate wall-clock time, or wait for it to become available.
-pub async fn get_time(rtc: &Rtc<'_>) -> UtcDateTime {
-    let t = LAST_STATE.get().await.lock().await;
-    let now = rtc.time_since_power_up();
-    return t.utc + time::Duration::microseconds((now - t.fetched_time).as_micros() as i64);
+pub struct NTP<'s> {
+    stack: embassy_net::Stack<'s>,
+    dns_resolver: crate::dns::DNSResolver<'s, 2>,
+    last_state: Mutex<RawMutex, Option<NtpState>>,
 }
+impl<'s> NTP<'s> {
+    pub fn new(stack: embassy_net::Stack<'s>) -> Self {
+        Self {
+            stack,
+            dns_resolver: crate::dns::DNSResolver::new(stack),
+            last_state: Mutex::new(None),
+        }
+    }
 
-#[embassy_executor::task]
-async fn refresh_time(rtc: &'static Rtc<'static>, stack: embassy_net::Stack<'static>) {
-    let mut dns_resolver = crate::dns::DNSResolver::<2>::new(stack);
-    loop {
-        stack.wait_config_up().await;
-        let Ok(ntp_result) = dns_resolver
+    /// Get the latest approximate wall-clock time.
+    pub async fn get_utc(&mut self, rtc: &Rtc<'_>) -> anyhow::Result<UtcDateTime> {
+        let ntp_state = match self
+            .dns_resolver
             .run_against_dns(NTP_SERVER, async |addr| {
-                get_ntp(stack, SocketAddr::new(addr, PORT)).await
+                get_ntp(self.stack, SocketAddr::new(addr, PORT)).await
             })
             .await
-        else {
-            error!("get time error");
-            Timer::after_secs(5).await;
-            continue;
-        };
-        let fetched_time = rtc.time_since_power_up();
-        let utc = match ntp_to_utc(ntp_result) {
-            Ok(u) => u,
-            Err(e) => {
-                error!(
-                    "Invalid NTP received ({}): {}",
-                    Debug2Format(&e),
-                    Debug2Format(&ntp_result)
-                );
-                continue;
+            .and_then(ntp_to_utc)
+        {
+            Ok(result) => {
+                let fetched_time = rtc.time_since_power_up();
+                let state = NtpState {
+                    utc: result,
+                    fetched_time,
+                };
+                *self.last_state.lock().await = Some(state);
+                state
             }
+            Err(e) => match *self.last_state.lock().await {
+                Some(s) => s,
+                None => bail!("failed to get latest NTP state: {}", Display2Format(&e)),
+            },
         };
-        let new_state = NtpState { utc, fetched_time };
-        *LAST_STATE.get_or_init(|| Mutex::new(new_state)).lock().await = new_state;
 
-        Timer::after(NTP_POLL_INTERVAL).await;
+        Ok(ntp_state.time_now(rtc))
     }
 }
 
@@ -90,9 +89,9 @@ async fn get_ntp(stack: embassy_net::Stack<'_>, addr: SocketAddr) -> anyhow::Res
     Ok(result)
 }
 
-fn ntp_to_utc(result: NtpResult) -> Result<UtcDateTime, time::error::ComponentRange> {
+fn ntp_to_utc(result: NtpResult) -> anyhow::Result<UtcDateTime> {
     let mut nanos = result.sec() as i128 * 1_000_000_000;
     nanos += (result.sec_fraction() as i128 * 1_000_000_000) / (u32::MAX as i128);
     // TODO: does this need to use offset?
-    UtcDateTime::from_unix_timestamp_nanos(nanos)
+    Ok(UtcDateTime::from_unix_timestamp_nanos(nanos)?)
 }
