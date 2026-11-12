@@ -100,7 +100,6 @@ async fn get_calendar_events(
         start_time.minute(),
         start_time.second(),
     );
-    info!("time_min: {}", time_min);
     // GET url: request a handful of results after the given start time, in the
     // Europe/London timezone (which is BST-aware).
     // The returned result should be in ISO-8601 so have an explicit timezone
