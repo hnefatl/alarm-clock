@@ -2,7 +2,6 @@ use alloc::{
     format,
     string::{String, ToString},
 };
-use defmt::info;
 use embassy_net::{
     Stack,
     dns::DnsSocket,
@@ -155,8 +154,6 @@ struct Event {
 struct EventTime {
     #[serde(rename = "dateTime", deserialize_with="time::serde::iso8601::deserialize")]
     date_time: OffsetDateTime,
-    #[serde(rename = "timeZone")]
-    time_zone: Option<heapless::String<64>>,
 }
 
 #[derive(Debug)]
