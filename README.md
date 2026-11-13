@@ -23,3 +23,13 @@ $ cargo run
 Go to https://www.google.com/device and enter XXX-XXX-XXX to authorise...
 Refresh token is: ...
 ```
+
+## Audio Files
+
+Under `alarm_clock/alarm_sounds`, and embedded into the firmware image in `alarm_clock/src/main.rs`.
+
+Convert from MP3 to WAV using:
+
+```sh
+$ nix run nixpkgs#ffmpeg -- -i alarm_clock/alarm_sounds/input.mp3 -acodec pcm_s16le -ac 1 -ar 16000 alarm_clock/alarm_sounds/output.wav
+```
