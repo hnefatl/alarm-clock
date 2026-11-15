@@ -7,7 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use core_s3::CoreS3;
 use core_s3::audio::WavPcm16;
 use core_s3::bsp::CoreS3DisplayResources;
@@ -15,7 +15,7 @@ use core_s3::power::Axp2101;
 use defmt::{Debug2Format, Display2Format, debug, error, info};
 use embassy_executor::Spawner;
 use embassy_sync::once_lock::OnceLock;
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::rtc_cntl::{Rtc, reset_reason, wakeup_cause};
 use esp_hal::timer::timg::TimerGroup;
@@ -54,8 +54,7 @@ defmt::timestamp!("{=u64:us}s", {
 esp_bootloader_esp_idf::esp_app_desc!();
 
 // Alarm disabled for faster flashing during testing.
-//const ALARM_WAV: &[u8] = include_bytes!("../alarm_sounds/alarm.wav");
-const ALARM_WAV: &[u8] = &[0u8; 0];
+const ALARM_WAV: &[u8] = include_bytes!("../alarm_sounds/level_up2.wav");
 
 #[allow(
     clippy::large_stack_frames,
@@ -115,44 +114,73 @@ async fn main(spawner: Spawner) -> ! {
     let mut pmic = Axp2101::new(internal_i2c);
     pmic.set_display_backlight(0).expect("failed to set display backlight");
 
-    let audio_peripherals = audio::AudioPeripherals {
-        i2s1: peripherals.I2S1,
-        dma_ch1: peripherals.DMA_CH1,
-        gpio13: peripherals.GPIO13,
-        gpio33: peripherals.GPIO33,
-        gpio34: peripherals.GPIO34,
-    };
-    // Alarm disabled for faster flashing during testing.
-    //let alarm = WavPcm16::new(ALARM_WAV).expect("failed to parse alarm sound");
-    //audio::play_audio(audio_peripherals, alarm).await;
-
     let mut ntp = ntp::NTP::new(stack);
+    let mut audio = audio::Audio::new(
+        peripherals.I2S1,
+        peripherals.DMA_CH1,
+        peripherals.GPIO13,
+        peripherals.GPIO33,
+        peripherals.GPIO34,
+    )
+    .expect("failed to initialise audio");
 
-    let mut do_loop = async || -> anyhow::Result<()> {
-        stack.wait_config_up().await;
-
+    let mut wakeup_time = time::UtcDateTime::MAX;
+    let mut played_alarm_today = false;
+    let mut do_loop = async || -> anyhow::Result<Duration> {
         info!("power: {}", pmic.battery_level_percent());
 
         let walltime = ntp.get_utc(rtc).await.context("Failed to get latest time")?;
         info!("time: {}", Display2Format(&walltime));
 
+        // Play the alarm as soon as we're at or after the wakeup time.
+        if walltime >= wakeup_time && !played_alarm_today {
+            let alarm = WavPcm16::new(ALARM_WAV).map_err(|e| anyhow!("failed to parse alarm sound: {:?}", e))?;
+            audio.play_audio(alarm).await.context("Failed to play audio")?;
+            played_alarm_today = true;
+        }
+        // Reset the alarm anytime between 0-4am.
+        if walltime.hour() <= 4 && played_alarm_today {
+            played_alarm_today = false;
+        }
+
         // Only fetch calendar events starting today: this'll misbehave if a wakeup event
         // is around midnight, but that's unlikely.
         let start_date = walltime.truncate_to_day();
-        let wakeup_time = calendar::get_next_wakeup_time(stack, start_date, &secrets)
+        wakeup_time = calendar::get_next_wakeup_time(stack, start_date, &secrets)
             .await
             .context("next wakeup check failed")?;
 
-        info!("next wakeupevent at: {:?}", Debug2Format(&wakeup_time));
-        Ok(())
+        info!("today's wakeupevent is at: {:?}", Debug2Format(&wakeup_time));
+
+        Ok(if walltime > wakeup_time && played_alarm_today {
+            // We're past the wakeup event, just sleep until the next day.
+            Duration::from_secs(5 * 60)
+        } else {
+            // Time until next wakeup.
+            Duration::from_micros(
+                (wakeup_time - walltime)
+                    .whole_microseconds()
+                    .clamp(0, u64::MAX as i128) as u64,
+            )
+        })
     };
 
+    stack.wait_config_up().await;
     loop {
-        if let Err(e) = do_loop().await {
-            // Use alloc format to trigger the expanded "alternate" anyhow error message
-            // which includes details on wrapped errors.
-            error!("{}", alloc::format!("{:#}", e));
+        match do_loop().await {
+            Ok(sleep_time) => {
+                // Sleep for at most 5mins before checking the time.
+                const MAX_SLEEP: Duration = Duration::from_secs(5 * 60);
+                let sleep_time = sleep_time.clamp(Duration::MIN, MAX_SLEEP);
+                info!("Sleeping for {}", sleep_time);
+                Timer::after(sleep_time).await;
+            }
+            Err(e) => {
+                // Use alloc::format to trigger the expanded "alternate" anyhow
+                // error message which includes details on wrapped errors.
+                error!("{}", alloc::format!("{:#}", e));
+                Timer::after_secs(60).await;
+            }
         }
-        Timer::after_secs(5).await;
     }
 }
